@@ -27,3 +27,8 @@ EVENT_FUNDS_FLOW = 'eFundsFlow.'
 EVENT_ERROR = 'eError'
 EVENT_WARNING = 'eWarning'
 EVENT_CRITICAL = 'eCritical'
+
+# 新闻事件
+EVENT_NEWS = 'eNews.'                # 新闻数据事件
+EVENT_NEWS_ANALYSIS = 'eNewsAnalysis'  # 新闻分析结果事件
+EVENT_TRADE_COMMAND = 'eTradeCommand' # 交易指令事件

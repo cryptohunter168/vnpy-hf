@@ -431,3 +431,91 @@ class HistoryRequest:
     def __post_init__(self):
         """"""
         self.vt_symbol = f"{self.symbol}.{self.exchange.value}"
+
+
+@dataclass
+class NewsData(BaseData):
+    """新闻数据对象"""
+
+    news_id: str = ""               # 新闻ID
+    title: str = ""                 # 新闻标题
+    content: str = ""               # 新闻内容
+    source: str = ""                # 新闻来源
+    url: str = ""                   # 新闻链接
+    news_time: datetime = None      # 发布时间
+
+    def __post_init__(self):
+        self.vt_news_id = f"{self.gateway_name}.{self.news_id}"
+
+
+@dataclass
+class NewsAnalysisData(BaseData):
+    """新闻分析结果对象"""
+
+    news_id: str = ""               # 关联的新闻ID
+    sentiment: float = 0.0          # 情感分数 (-1 ~ 1)
+    confidence: float = 0.0         # 置信度 (0 ~ 1)
+    sentiment_label: str = ""       # 情感标签 (正面/负面/中性)
+    relevant_symbols: list = None   # 相关交易品种列表
+    keywords: list = None           # 提取的关键词
+    summary: str = ""               # 分析摘要
+
+    # 交易信号相关
+    trade_signal: str = ""          # 交易信号 (BUY/SELL/HOLD)
+    target_symbols: list = None     # 目标交易品种
+    analysis_time: datetime = None  # 分析时间
+
+    def __post_init__(self):
+        if self.relevant_symbols is None:
+            self.relevant_symbols = []
+        if self.target_symbols is None:
+            self.target_symbols = []
+        if self.keywords is None:
+            self.keywords = []
+        if not self.analysis_time:
+            self.analysis_time = datetime.now()
+
+
+@dataclass
+class TradeCommandData(BaseData):
+    """交易指令对象"""
+
+    command_id: str = ""            # 指令ID
+    command_type: str = ""          # 指令类型 (BUY/SELL/CANCEL_ALL)
+    symbol: str = ""                # 交易品种
+    exchange: Exchange = None       # 交易所
+    direction: Direction = None    # 方向
+    offset: Offset = None           # 开平仓
+    price: float = 0                # 价格
+    volume: float = 0               # 数量
+    order_type: OrderType = None     # 订单类型
+    source: str = ""                # 指令来源 (NEWS/MANUAL/STRATEGY)
+    priority: int = 0               # 优先级
+    reason: str = ""                # 执行理由
+    expire_time: datetime = None    # 过期时间
+    created_time: datetime = None   # 创建时间
+    status: str = "pending"         # 状态 (pending/executed/rejected/expired)
+
+    def __post_init__(self):
+        if self.symbol and self.exchange:
+            self.vt_symbol = f"{self.symbol}.{self.exchange.value}"
+        if not self.created_time:
+            self.created_time = datetime.now()
+        if not self.command_id:
+            self.command_id = f"{self.gateway_name}.{self.created_time.strftime('%Y%m%d%H%M%S%f')}"
+
+
+@dataclass
+class LarkMessageData(BaseData):
+    """飞书消息对象"""
+
+    message_id: str = ""            # 消息ID
+    chat_id: str = ""               # 群聊ID或用户ID
+    content: str = ""               # 消息内容
+    message_type: str = ""          # 消息类型 (text/card)
+    timestamp: datetime = None     # 消息时间戳
+    sender: str = ""                # 发送者
+
+    def __post_init__(self):
+        if not self.timestamp:
+            self.timestamp = datetime.now()
