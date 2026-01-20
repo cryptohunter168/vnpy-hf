@@ -11,9 +11,19 @@ from vnpy.trader.object import OrderData, TradeData, TickData, BarData
 from vnpy.app.cta_strategy.template import CtaTemplate
 from vnpy.trader.event import EVENT_NEWS, EVENT_NEWS_ANALYSIS, EVENT_TRADE_COMMAND
 
-from .config import ExecutionConfig, ExecutionMode
+from .config import (
+    ExecutionConfig, ExecutionMode,
+    NewsProcessingConfig, NewsProcessingMode, ScheduleType,
+    IncrementalModeConfig, CurrentRankModeConfig, DailySummaryModeConfig
+)
 from .sentiment_analyzer import NewsAnalyzer, get_analyzer
 from .execution_engine import ExecutionEngine
+from .news_storage import StorageManager
+from .news_matcher import (
+    NewsMatcher, IncrementalNewsMatcher,
+    CurrentRankNewsMatcher, DailySummaryNewsMatcher
+)
+from .scheduler import NewsScheduler, FixedTimeScheduler, IntervalScheduler
 
 
 class NewsTradingStrategy(CtaTemplate):
@@ -30,6 +40,8 @@ class NewsTradingStrategy(CtaTemplate):
 
     # 策略参数
     execution_mode: str = "direct"           # 执行模式
+    news_processing_mode: str = "incremental" # 新闻处理模式
+
     sentiment_threshold: float = 0.6         # 情感阈值
     confidence_threshold: float = 0.7        # 置信度阈值
     trade_volume: float = 1.0               # 交易数量
@@ -37,6 +49,24 @@ class NewsTradingStrategy(CtaTemplate):
     max_daily_orders: int = 10               # 每日最大交易次数
     news_valid_time: int = 300              # 新闻有效时间（秒）
     enable_lark_push: bool = True          # 启用飞书推送
+
+    # 增量模式参数
+    incremental_keywords: str = ""          # 增量模式关键词，逗号分隔
+    incremental_max_cache: int = 1000       # 增量模式最大缓存数
+
+    # 当前榜单模式参数
+    rank_threshold: int = 10                # 榜单模式排名阈值
+    rank_min_sources: int = 2               # 榜单模式最少源数
+    rank_platforms: str = ""                # 榜单模式平台过滤，逗号分隔
+
+    # 当日汇总模式参数
+    summary_keywords: str = ""              # 汇总模式关键词，逗号分隔
+    summary_schedule_times: str = "09:00,15:00,21:00"  # 汇总模式推送时间点
+    summary_schedule_type: str = "fixed_time"         # 定时类型
+    summary_schedule_interval: int = 3600             # 汇总模式推送间隔（秒）
+
+    # SQLite 配置
+    db_path: str = "vnpy_news_trading.db"   # SQLite 数据库文件路径
 
     # 飞书配置
     lark_app_id: str = ""                  # 飞书应用ID
@@ -54,6 +84,7 @@ class NewsTradingStrategy(CtaTemplate):
 
     parameters = [
         "execution_mode",
+        "news_processing_mode",
         "sentiment_threshold",
         "confidence_threshold",
         "trade_volume",
@@ -66,6 +97,16 @@ class NewsTradingStrategy(CtaTemplate):
         "lark_chat_id",
         "lark_approval_timeout",
         "analyzer_type",
+        "incremental_keywords",
+        "incremental_max_cache",
+        "rank_threshold",
+        "rank_min_sources",
+        "rank_platforms",
+        "summary_keywords",
+        "summary_schedule_times",
+        "summary_schedule_type",
+        "summary_schedule_interval",
+        "db_path",
     ]
 
     variables = [
@@ -78,10 +119,24 @@ class NewsTradingStrategy(CtaTemplate):
         """构造函数"""
         super().__init__(cta_engine, strategy_name, vt_symbol, setting)
 
-        # 配置
+        # 1. 创建执行配置
         self.config = self._create_config()
 
-        # 分析器
+        # 2. 创建新闻处理配置
+        self.news_config = self._create_news_config()
+
+        # 3. 初始化 SQLite 存储管理器
+        self.storage_manager = StorageManager(self.db_path)
+
+        # 4. 初始化匹配器
+        self.matcher = self._create_matcher()
+
+        # 5. 初始化调度器（仅汇总模式需要）
+        self.scheduler: Optional[NewsScheduler] = None
+        if self.news_config.mode == NewsProcessingMode.DAILY_SUMMARY:
+            self.scheduler = self._create_scheduler()
+
+        # 6. 分析器（保持原有）
         self.analyzer = get_analyzer(
             config={
                 "sentiment_threshold": self.sentiment_threshold,
@@ -91,12 +146,74 @@ class NewsTradingStrategy(CtaTemplate):
             analyzer_type=self.analyzer_type
         )
 
-        # 执行引擎
+        # 7. 执行引擎（稍后在 on_init 中初始化）
         self.execution_engine: Optional[ExecutionEngine] = None
 
-        # 新闻缓存
-        self.processed_news_ids = set()
-        self.news_buffer = []
+    def _create_news_config(self) -> NewsProcessingConfig:
+        """创建新闻处理配置"""
+        mode = NewsProcessingMode(self.news_processing_mode)
+
+        # 解析关键词列表
+        incremental_keywords = [k.strip() for k in self.incremental_keywords.split(",") if k.strip()]
+        summary_keywords = [k.strip() for k in self.summary_keywords.split(",") if k.strip()]
+        rank_platforms = [p.strip() for p in self.rank_platforms.split(",") if p.strip()]
+
+        # 解析定时配置
+        schedule_times = [t.strip() for t in self.summary_schedule_times.split(",") if t.strip()]
+
+        return NewsProcessingConfig(
+            mode=mode,
+            incremental_config=IncrementalModeConfig(
+                keywords=incremental_keywords,
+                max_cache_size=self.incremental_max_cache
+            ),
+            current_rank_config=CurrentRankModeConfig(
+                rank_threshold=self.rank_threshold,
+                min_sources=self.rank_min_sources,
+                platforms=rank_platforms
+            ),
+            daily_summary_config=DailySummaryModeConfig(
+                keywords=summary_keywords,
+                schedule_type=ScheduleType(self.summary_schedule_type),
+                schedule_times=schedule_times,
+                schedule_interval=self.summary_schedule_interval
+            )
+        )
+
+    def _create_matcher(self) -> NewsMatcher:
+        """创建新闻匹配器"""
+        mode = self.news_config.mode
+
+        if mode == NewsProcessingMode.INCREMENTAL:
+            return IncrementalNewsMatcher(self.news_config)
+        elif mode == NewsProcessingMode.CURRENT_RANK:
+            try:
+                from . import core
+                return CurrentRankNewsMatcher(self.news_config, core)
+            except ImportError:
+                self.write_log("警告: 无法导入core模块，使用增量匹配器")
+                return IncrementalNewsMatcher(self.news_config)
+        elif mode == NewsProcessingMode.DAILY_SUMMARY:
+            return DailySummaryNewsMatcher(self.news_config)
+        else:
+            raise ValueError(f"未知的处理模式: {mode}")
+
+    def _create_scheduler(self) -> NewsScheduler:
+        """创建定时调度器"""
+        summary_config = self.news_config.daily_summary_config
+
+        if summary_config.schedule_type == ScheduleType.FIXED_TIME:
+            return FixedTimeScheduler(
+                callback=self._on_summary_scheduled,
+                event_engine=self.event_engine,
+                schedule_times=summary_config.schedule_times
+            )
+        else:
+            return IntervalScheduler(
+                callback=self._on_summary_scheduled,
+                event_engine=self.event_engine,
+                interval_seconds=summary_config.schedule_interval
+            )
 
     def _create_config(self) -> ExecutionConfig:
         """创建执行配置"""
@@ -116,7 +233,7 @@ class NewsTradingStrategy(CtaTemplate):
 
     def on_init(self):
         """策略初始化"""
-        self.write_log("新闻驱动交易策略初始化")
+        self.write_log(f"新闻驱动交易策略初始化 (模式: {self.news_processing_mode})")
 
         # 订阅新闻事件
         self.event_engine.register(EVENT_NEWS, self.on_news_event)
@@ -131,6 +248,11 @@ class NewsTradingStrategy(CtaTemplate):
             )
             self.write_log("执行引擎初始化成功")
 
+        # 启动调度器（如果需要）
+        if self.scheduler:
+            self.scheduler.start()
+            self.write_log("定时调度器已启动")
+
     def on_start(self):
         """策略启动"""
         self.write_log("新闻驱动交易策略启动")
@@ -142,35 +264,148 @@ class NewsTradingStrategy(CtaTemplate):
         """策略停止"""
         self.write_log("新闻驱动交易策略停止")
 
+        # 停止调度器
+        if self.scheduler:
+            self.scheduler.stop()
+            self.write_log("定时调度器已停止")
+
+        # 关闭数据库连接
+        if self.storage_manager:
+            self.storage_manager.close()
+            self.write_log("数据库连接已关闭")
+
         # 取消事件订阅
         self.event_engine.unregister(EVENT_NEWS, self.on_news_event)
         self.event_engine.unregister(EVENT_NEWS_ANALYSIS, self.on_analysis_event)
         self.event_engine.unregister(EVENT_TRADE_COMMAND, self.on_trade_command_event)
 
     def on_news_event(self, event):
-        """处理新闻事件"""
+        """处理新闻事件（重构后的路由函数）"""
         news_data = event.data
         news_id = news_data.get("news_id", "")
 
-        # 检查是否已处理
-        if news_id in self.processed_news_ids:
+        if not news_id:
             return
 
-        # 检查新闻是否与当前品种相关
-        symbol_keywords = [self.vt_symbol.split('.')[0]]
-        if not any(k in news_data.get("title", "") or
-                  k in news_data.get("content", "")
-                  for k in symbol_keywords):
+        # 根据模式分发处理
+        mode = self.news_config.mode
+
+        if mode == NewsProcessingMode.INCREMENTAL:
+            self._process_incremental_news(news_data)
+        elif mode == NewsProcessingMode.CURRENT_RANK:
+            self._process_current_rank_news(news_data)
+        elif mode == NewsProcessingMode.DAILY_SUMMARY:
+            self._process_daily_summary_news(news_data)
+
+    def _process_incremental_news(self, news_data: dict):
+        """处理增量模式新闻"""
+        # 1. 匹配
+        if not self.matcher.match(news_data):
             return
 
-        self.write_log(f"收到新闻: {news_data.get('title', '')}")
+        # 2. 存储到数据库（自动去重）
+        is_new = self.storage_manager.news_storage.add_news(
+            NewsProcessingMode.INCREMENTAL,
+            news_data
+        )
 
-        # 添加到缓存
-        self.processed_news_ids.add(news_id)
-        self.news_buffer.append(news_data)
+        if not is_new:
+            return  # 已处理过
 
-        # 分析新闻
+        self.write_log(f"[增量模式] 收到新闻: {news_data.get('title', '')}")
+
+        # 3. 立即分析
         self._analyze_news(news_data)
+
+    def _process_current_rank_news(self, news_data: dict):
+        """处理当前榜单模式新闻"""
+        # 1. 匹配
+        if not self.matcher.match(news_data):
+            return
+
+        # 2. 存储到数据库（自动去重）
+        is_new = self.storage_manager.news_storage.add_news(
+            NewsProcessingMode.CURRENT_RANK,
+            news_data
+        )
+
+        if not is_new:
+            return
+
+        self.write_log(f"[榜单模式] 收到新闻: {news_data.get('title', '')}")
+
+        # 3. 立即分析
+        self._analyze_news(news_data)
+
+    def _process_daily_summary_news(self, news_data: dict):
+        """处理当日汇总模式新闻"""
+        # 1. 匹配
+        if not self.matcher.match(news_data):
+            return
+
+        # 2. 存储到数据库（自动去重）
+        is_new = self.storage_manager.news_storage.add_news(
+            NewsProcessingMode.DAILY_SUMMARY,
+            news_data
+        )
+
+        if not is_new:
+            return  # 已收集过
+
+        self.write_log(f"[汇总模式] 收集新闻: {news_data.get('title', '')}")
+
+        # 3. 检查是否应该触发批量分析
+        if self._should_trigger_summary():
+            self._on_summary_scheduled()
+
+    def _should_trigger_summary(self) -> bool:
+        """判断是否应该触发汇总分析"""
+        summary_config = self.news_config.daily_summary_config
+        now = datetime.now()
+        current_time = now.strftime("%H:%M")
+
+        if summary_config.schedule_type == ScheduleType.FIXED_TIME:
+            # 固定时间点触发
+            return current_time in summary_config.schedule_times
+        else:
+            # 间隔模式：使用内存记录
+            if not hasattr(self, '_last_summary_time'):
+                self._last_summary_time = None
+
+            if self._last_summary_time is None:
+                self._last_summary_time = now
+                return True
+
+            elapsed = (now - self._last_summary_time).total_seconds()
+            if elapsed >= summary_config.schedule_interval:
+                self._last_summary_time = now
+                return True
+
+        return False
+
+    def _on_summary_scheduled(self):
+        """定时触发汇总分析"""
+        # 从数据库获取所有未分析的汇总模式新闻
+        all_news = self.storage_manager.news_storage.get_news_by_mode(
+            NewsProcessingMode.DAILY_SUMMARY,
+            limit=None  # 获取所有
+        )
+
+        if not all_news:
+            self.write_log("[汇总模式] 无待分析新闻")
+            return
+
+        self.write_log(f"[汇总模式] 定时分析 {len(all_news)} 条新闻")
+
+        # 批量分析
+        for news_doc in all_news:
+            # 从数据库文档中提取原始新闻数据
+            news_data = news_doc.get("raw_data", news_doc)
+            self._analyze_news(news_data)
+
+        # 清空已分析的汇总模式新闻
+        self.storage_manager.news_storage.clear_mode(NewsProcessingMode.DAILY_SUMMARY)
+        self.write_log("[汇总模式] 已清空缓存")
 
     def _analyze_news(self, news_data: dict):
         """分析新闻"""
@@ -185,6 +420,9 @@ class NewsTradingStrategy(CtaTemplate):
             self.write_log(f"分析结果: 情感={analysis['sentiment']:.2f}, "
                           f"标签={analysis['sentiment_label']}, "
                           f"信号={analysis['trade_signal']}")
+
+            # 保存分析结果到数据库
+            self.storage_manager.analysis_storage.save_analysis(analysis)
 
             # 发送分析事件
             from vnpy.event import Event
