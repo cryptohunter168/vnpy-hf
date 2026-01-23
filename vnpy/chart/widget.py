@@ -1,6 +1,6 @@
-from typing import List, Dict, Type
-from collections import deque
-import pyqtgraph as pg
+from datetime import datetime
+
+import pyqtgraph as pg      # type: ignore
 
 from vnpy.trader.ui import QtGui, QtWidgets, QtCore
 from vnpy.trader.object import BarData
@@ -11,7 +11,8 @@ from .base import (
     to_int, NORMAL_FONT
 )
 from .axis import DatetimeAxis
-from .item import ChartItem, CandleItem, VolumeItem
+from .item import ChartItem
+
 
 pg.setConfigOptions(antialias=True)
 
@@ -20,36 +21,37 @@ class ChartWidget(pg.PlotWidget):
     """"""
     MIN_BAR_COUNT = 100
 
-    def __init__(self, parent: QtWidgets.QWidget = None, title: str = "ChartWidget of vn.py"):
+    def __init__(self, parent: QtWidgets.QWidget | None = None) -> None:
         """"""
         super().__init__(parent)
-        self.title = title
+
         self._manager: BarManager = BarManager()
 
-        self._plots: Dict[str, pg.PlotItem] = {}
-        self._items: Dict[str, ChartItem] = {}
-        self._item_plot_map: Dict[ChartItem, pg.PlotItem] = {}
+        self._plots: dict[str, pg.PlotItem] = {}
+        self._items: dict[str, ChartItem] = {}
+        self._item_plot_map: dict[ChartItem, pg.PlotItem] = {}
 
-        self._first_plot: pg.PlotItem = None
-        self._cursor: ChartCursor = None
+        self._first_plot: pg.PlotItem | None = None
+        self._cursor: ChartCursor | None = None
 
-        self._right_ix: int = 0  # Index of most right data
-        self._bar_count: int = self.MIN_BAR_COUNT  # Total bar visible in chart
+        self._right_ix: int = 0                     # Index of most right data
+        self._bar_count: int = self.MIN_BAR_COUNT   # Total bar visible in chart
 
         self._init_ui()
 
     def _init_ui(self) -> None:
         """"""
-        self.setWindowTitle(self.title)
+        self.setWindowTitle("ChartWidget of VeighNa")
 
-        self._layout = pg.GraphicsLayout()
+        self._layout: pg.GraphicsLayout = pg.GraphicsLayout()
         self._layout.setContentsMargins(10, 10, 10, 10)
         self._layout.setSpacing(0)
         self._layout.setBorder(color=GREY_COLOR, width=0.8)
         self._layout.setZValue(0)
         self.setCentralItem(self._layout)
 
-        self._x_axis = DatetimeAxis(self._manager, orientation='bottom')
+    def _get_new_x_axis(self) -> DatetimeAxis:
+        return DatetimeAxis(self._manager, orientation="bottom")
 
     def add_cursor(self) -> None:
         """"""
@@ -58,22 +60,22 @@ class ChartWidget(pg.PlotWidget):
                 self, self._manager, self._plots, self._item_plot_map)
 
     def add_plot(
-            self,
-            plot_name: str,
-            minimum_height: int = 80,
-            maximum_height: int = None,
-            hide_x_axis: bool = False
+        self,
+        plot_name: str,
+        minimum_height: int = 80,
+        maximum_height: int | None = None,
+        hide_x_axis: bool = False
     ) -> None:
         """
         Add plot area.
         """
         # Create plot object
-        plot = pg.PlotItem(axisItems={'bottom': self._x_axis})
+        plot: pg.PlotItem = pg.PlotItem(axisItems={"bottom": self._get_new_x_axis()})
         plot.setMenuEnabled(False)
         plot.setClipToView(True)
-        plot.hideAxis('left')
-        plot.showAxis('right')
-        plot.setDownsampling(mode='peak')
+        plot.hideAxis("left")
+        plot.showAxis("right")
+        plot.setDownsampling(mode="peak")
         plot.setRange(xRange=(0, 1), yRange=(0, 1))
         plot.hideButtons()
         plot.setMinimumHeight(minimum_height)
@@ -88,18 +90,18 @@ class ChartWidget(pg.PlotWidget):
             self._first_plot = plot
 
         # Connect view change signal to update y range function
-        view = plot.getViewBox()
+        view: pg.ViewBox = plot.getViewBox()
         view.sigXRangeChanged.connect(self._update_y_range)
         view.setMouseEnabled(x=True, y=False)
 
         # Set right axis
-        right_axis = plot.getAxis('right')
+        right_axis: pg.AxisItem = plot.getAxis("right")
         right_axis.setWidth(60)
         right_axis.tickFont = NORMAL_FONT
 
         # Connect x-axis link
         if self._plots:
-            first_plot = list(self._plots.values())[0]
+            first_plot: pg.PlotItem = list(self._plots.values())[0]
             plot.setXLink(first_plot)
 
         # Store plot object in dict
@@ -110,23 +112,20 @@ class ChartWidget(pg.PlotWidget):
         self._layout.addItem(plot)
 
     def add_item(
-            self,
-            item_class: Type[ChartItem],
-            item_name: str,
-            plot_name: str
-    ):
+        self,
+        item_class: type[ChartItem],
+        item_name: str,
+        plot_name: str
+    ) -> None:
         """
         Add chart item.
         """
-        # 创建显示的对象，蜡烛图，bar图，散点，线等
-        item = item_class(self._manager)
+        item: ChartItem = item_class(self._manager)
         self._items[item_name] = item
 
-        # 获取设置的显示区域，例如主图/volume/附图等
-        plot = self._plots.get(plot_name)
+        plot: pg.PlotItem = self._plots.get(plot_name)
         plot.addItem(item)
 
-        # 绑定显示对象与显示区域关系
         self._item_plot_map[item] = plot
 
     def get_plot(self, plot_name: str) -> pg.PlotItem:
@@ -135,11 +134,11 @@ class ChartWidget(pg.PlotWidget):
         """
         return self._plots.get(plot_name, None)
 
-    def get_all_plots(self) -> List[pg.PlotItem]:
+    def get_all_plots(self) -> list[pg.PlotItem]:
         """
         Get all plot objects.
         """
-        return self._plots.values()
+        return list(self._plots.values())
 
     def clear_all(self) -> None:
         """
@@ -153,7 +152,7 @@ class ChartWidget(pg.PlotWidget):
         if self._cursor:
             self._cursor.clear_all()
 
-    def update_history(self, history: List[BarData]) -> None:
+    def update_history(self, history: list[BarData]) -> None:
         """
         Update a list of bar data.
         """
@@ -175,7 +174,6 @@ class ChartWidget(pg.PlotWidget):
         for item in self._items.values():
             item.update_bar(bar)
 
-        # 刷新显示区域的最高/最低值
         self._update_plot_limits()
 
         if self._right_ix >= (self._manager.get_count() - self._bar_count / 2):
@@ -199,8 +197,8 @@ class ChartWidget(pg.PlotWidget):
         """
         Update the x-axis range of plots.
         """
-        max_ix = self._right_ix
-        min_ix = self._right_ix - self._bar_count
+        max_ix: int = self._right_ix
+        min_ix: int = self._right_ix - self._bar_count
 
         for plot in self._plots.values():
             plot.setRange(xRange=(min_ix, max_ix), padding=0)
@@ -209,23 +207,29 @@ class ChartWidget(pg.PlotWidget):
         """
         Update the y-axis range of plots.
         """
-        view = self._first_plot.getViewBox()
-        view_range = view.viewRange()
+        if not self._first_plot:
+            return
 
-        min_ix = max(0, int(view_range[0][0]))
-        max_ix = min(self._manager.get_count(), int(view_range[0][1]))
+        view: pg.ViewBox = self._first_plot.getViewBox()
+        view_range: list = view.viewRange()
+
+        min_ix: int = max(0, int(view_range[0][0]))
+        max_ix: int = min(self._manager.get_count(), int(view_range[0][1]))
 
         # Update limit for y-axis
         for item, plot in self._item_plot_map.items():
-            y_range = item.get_y_range(min_ix, max_ix)
+            y_range: tuple = item.get_y_range(min_ix, max_ix)
             plot.setRange(yRange=y_range)
 
     def paintEvent(self, event: QtGui.QPaintEvent) -> None:
         """
         Reimplement this method of parent to update current max_ix value.
         """
-        view = self._first_plot.getViewBox()
-        view_range = view.viewRange()
+        if not self._first_plot:
+            return
+
+        view: pg.ViewBox = self._first_plot.getViewBox()
+        view_range: list = view.viewRange()
         self._right_ix = max(0, view_range[0][1])
 
         super().paintEvent(event)
@@ -234,20 +238,22 @@ class ChartWidget(pg.PlotWidget):
         """
         Reimplement this method of parent to move chart horizontally and zoom in/out.
         """
-        if event.key() == QtCore.Qt.Key_Left:
+        Key = QtCore.Qt.Key
+
+        if event.key() == Key.Key_Left:
             self._on_key_left()
-        elif event.key() == QtCore.Qt.Key_Right:
+        elif event.key() == Key.Key_Right:
             self._on_key_right()
-        elif event.key() == QtCore.Qt.Key_Up:
+        elif event.key() == Key.Key_Up:
             self._on_key_up()
-        elif event.key() == QtCore.Qt.Key_Down:
+        elif event.key() == Key.Key_Down:
             self._on_key_down()
 
     def wheelEvent(self, event: QtGui.QWheelEvent) -> None:
         """
         Reimplement this method of parent to zoom in/out.
         """
-        delta = event.angleDelta()
+        delta: QtCore.QPoint = event.angleDelta()
 
         if delta.y() > 0:
             self._on_key_up()
@@ -262,8 +268,10 @@ class ChartWidget(pg.PlotWidget):
         self._right_ix = max(self._right_ix, self._bar_count)
 
         self._update_x_range()
-        self._cursor.move_left()
-        self._cursor.update_info()
+
+        if self._cursor:
+            self._cursor.move_left()
+            self._cursor.update_info()
 
     def _on_key_right(self) -> None:
         """
@@ -273,28 +281,34 @@ class ChartWidget(pg.PlotWidget):
         self._right_ix = min(self._right_ix, self._manager.get_count())
 
         self._update_x_range()
-        self._cursor.move_right()
-        self._cursor.update_info()
+
+        if self._cursor:
+            self._cursor.move_right()
+            self._cursor.update_info()
 
     def _on_key_down(self) -> None:
         """
         Zoom out the chart.
         """
-        self._bar_count *= 1.2
+        self._bar_count = int(self._bar_count * 1.2)
         self._bar_count = min(int(self._bar_count), self._manager.get_count())
 
         self._update_x_range()
-        self._cursor.update_info()
+
+        if self._cursor:
+            self._cursor.update_info()
 
     def _on_key_up(self) -> None:
         """
         Zoom in the chart.
         """
-        self._bar_count /= 1.2
+        self._bar_count = int(self._bar_count / 1.2)
         self._bar_count = max(int(self._bar_count), self.MIN_BAR_COUNT)
 
         self._update_x_range()
-        self._cursor.update_info()
+
+        if self._cursor:
+            self._cursor.update_info()
 
     def move_to_right(self) -> None:
         """
@@ -302,35 +316,37 @@ class ChartWidget(pg.PlotWidget):
         """
         self._right_ix = self._manager.get_count()
         self._update_x_range()
-        self._cursor.update_info()
+
+        if self._cursor:
+            self._cursor.update_info()
 
 
 class ChartCursor(QtCore.QObject):
     """"""
 
     def __init__(
-            self,
-            widget: ChartWidget,
-            manager: BarManager,
-            plots: Dict[str, pg.GraphicsObject],
-            item_plot_map: Dict[ChartItem, pg.GraphicsObject]
-    ):
+        self,
+        widget: ChartWidget,
+        manager: BarManager,
+        plots: dict[str, pg.GraphicsObject],
+        item_plot_map: dict[ChartItem, pg.GraphicsObject]
+    ) -> None:
         """"""
         super().__init__()
 
         self._widget: ChartWidget = widget
         self._manager: BarManager = manager
-        self._plots: Dict[str, pg.GraphicsObject] = plots
-        self._item_plot_map: Dict[ChartItem, pg.GraphicsObject] = item_plot_map
+        self._plots: dict[str, pg.GraphicsObject] = plots
+        self._item_plot_map: dict[ChartItem, pg.GraphicsObject] = item_plot_map
 
         self._x: int = 0
-        self._y: int = 0
+        self._y: float = 0
         self._plot_name: str = ""
 
         self._init_ui()
         self._connect_signal()
 
-    def _init_ui(self):
+    def _init_ui(self) -> None:
         """"""
         self._init_line()
         self._init_label()
@@ -340,16 +356,16 @@ class ChartCursor(QtCore.QObject):
         """
         Create line objects.
         """
-        self._v_lines: Dict[str, pg.InfiniteLine] = {}
-        self._h_lines: Dict[str, pg.InfiniteLine] = {}
-        self._views: Dict[str, pg.ViewBox] = {}
+        self._v_lines: dict[str, pg.InfiniteLine] = {}
+        self._h_lines: dict[str, pg.InfiniteLine] = {}
+        self._views: dict[str, pg.ViewBox] = {}
 
-        pen = pg.mkPen(WHITE_COLOR)
+        pen: QtGui.QPen = pg.mkPen(WHITE_COLOR)
 
         for plot_name, plot in self._plots.items():
-            v_line = pg.InfiniteLine(angle=90, movable=False, pen=pen)
-            h_line = pg.InfiniteLine(angle=0, movable=False, pen=pen)
-            view = plot.getViewBox()
+            v_line: pg.InfiniteLine = pg.InfiniteLine(angle=90, movable=False, pen=pen)
+            h_line: pg.InfiniteLine = pg.InfiniteLine(angle=0, movable=False, pen=pen)
+            view: pg.ViewBox = plot.getViewBox()
 
             for line in [v_line, h_line]:
                 line.setZValue(0)
@@ -364,9 +380,9 @@ class ChartCursor(QtCore.QObject):
         """
         Create label objects on axis.
         """
-        self._y_labels: Dict[str, pg.TextItem] = {}
+        self._y_labels: dict[str, pg.TextItem] = {}
         for plot_name, plot in self._plots.items():
-            label = pg.TextItem(
+            label: pg.TextItem = pg.TextItem(
                 plot_name, fill=CURSOR_COLOR, color=BLACK_COLOR)
             label.hide()
             label.setZValue(2)
@@ -384,9 +400,9 @@ class ChartCursor(QtCore.QObject):
     def _init_info(self) -> None:
         """
         """
-        self._infos: Dict[str, pg.TextItem] = {}
+        self._infos: dict[str, pg.TextItem] = {}
         for plot_name, plot in self._plots.items():
-            info = pg.TextItem(
+            info: pg.TextItem = pg.TextItem(
                 "info",
                 color=CURSOR_COLOR,
                 border=CURSOR_COLOR,
@@ -412,7 +428,7 @@ class ChartCursor(QtCore.QObject):
             return
 
         # First get current mouse point
-        pos = evt
+        pos: tuple = evt
 
         for plot_name, view in self._views.items():
             rect = view.sceneBoundingRect()
@@ -444,12 +460,12 @@ class ChartCursor(QtCore.QObject):
 
     def _update_label(self) -> None:
         """"""
-        bottom_plot = list(self._plots.values())[-1]
+        bottom_plot: pg.PlotItem = list(self._plots.values())[-1]
         axis_width = bottom_plot.getAxis("right").width()
         axis_height = bottom_plot.getAxis("bottom").height()
-        axis_offset = QtCore.QPointF(axis_width, axis_height)
+        axis_offset: QtCore.QPointF = QtCore.QPointF(axis_width, axis_height)
 
-        bottom_view = list(self._views.values())[-1]
+        bottom_view: pg.ViewBox = list(self._views.values())[-1]
         bottom_right = bottom_view.mapSceneToView(
             bottom_view.sceneBoundingRect().bottomRight() - axis_offset
         )
@@ -462,7 +478,7 @@ class ChartCursor(QtCore.QObject):
             else:
                 label.hide()
 
-        dt = self._manager.get_datetime(self._x)
+        dt: datetime | None = self._manager.get_datetime(self._x)
         if dt:
             self._x_label.setText(dt.strftime("%Y-%m-%d %H:%M:%S"))
             self._x_label.show()
@@ -471,10 +487,10 @@ class ChartCursor(QtCore.QObject):
 
     def update_info(self) -> None:
         """"""
-        buf = {}
+        buf: dict = {}
 
         for item, plot in self._item_plot_map.items():
-            item_info_text = item.get_info_text(self._x)
+            item_info_text: str = item.get_info_text(self._x)
 
             if plot not in buf:
                 buf[plot] = item_info_text
@@ -483,14 +499,12 @@ class ChartCursor(QtCore.QObject):
                     buf[plot] += ("\n\n" + item_info_text)
 
         for plot_name, plot in self._plots.items():
-            plot_info_text = buf.get(plot, None)
-            if not plot_info_text:
-                continue
-            info = self._infos[plot_name]
+            plot_info_text: str = buf[plot]
+            info: pg.TextItem = self._infos[plot_name]
             info.setText(plot_info_text)
             info.show()
 
-            view = self._views[plot_name]
+            view: pg.ViewBox = self._views[plot_name]
             top_left = view.mapSceneToView(view.sceneBoundingRect().topLeft())
             info.setPos(top_left)
 
@@ -518,7 +532,10 @@ class ChartCursor(QtCore.QObject):
         """
         Update cursor after moved by left/right.
         """
-        bar = self._manager.get_bar(self._x)
+        bar: BarData | None = self._manager.get_bar(self._x)
+        if bar is None:
+            return
+
         self._y = bar.close_price
 
         self._update_line()
@@ -537,124 +554,3 @@ class ChartCursor(QtCore.QObject):
 
         for label in list(self._y_labels.values()) + [self._x_label]:
             label.hide()
-
-
-class KlineWidget(ChartWidget):
-    """ k线widget，支持多widget；主图/volume/附图"""
-    clsId = 0
-
-    def __init__(self, parent: QtWidgets.QWidget = None,
-                 title: str = "kline",
-                 display_volume: bool = False,
-                 display_sub: bool = False):
-
-        super().__init__(parent, title)
-
-        KlineWidget.clsId += 1
-        self.windowId = str(KlineWidget.clsId)
-
-        # 所有K线上指标
-        self.main_color_pool = deque(['red', 'green', 'yellow', 'white'])
-        self.main_indicator_data = {}  # 主图指标数据（字典，key是指标，value是list）
-        self.main_indicator_colors = {}  # 主图指标颜色（字典，key是指标，value是list
-        self.main_indicator_plots = {}  # 主图指标的所有画布（字典，key是指标，value是plot)
-
-        self.display_volume = display_volume
-        self.display_sub = display_sub
-
-        # 所有副图上指标
-        self.sub_color_pool = deque(['red', 'green', 'yellow', 'white'])
-        self.sub_indicator_data = {}
-        self.sub_indicator_colors = {}
-        self.sub_indicator_plots = {}
-
-        self.main_plot_name = f'{self.windowId}_main'
-        self.volume_plot_name = f'{self.windowId}_volume'
-        self.sub_plot_name = f'{self.windowId}_sub'
-
-        self.main_plot = None
-        self.volume_plot = None
-        self.sub_plot = None
-        if self.display_volume or self.display_sub:
-            self.add_plot(self.main_plot_name, hide_x_axis=True)  # 主图
-            self.add_item(CandleItem, "candle", self.main_plot_name)  # 往主图区域，加入
-            if self.display_volume:
-                self.add_plot(self.volume_plot_name, maximum_height=60)  # volume 附图
-                self.add_item(VolumeItem, "volume", self.volume_plot_name)
-                self.volume_plot = self.get_plot(self.volume_plot_name)
-            if self.display_sub:
-                self.add_plot(self.sub_plot_name, maximum_height=180)  # 附图
-                self.sub_plot = self.get_plot(self.sub_plot_name)
-
-        else:
-            self.add_plot(self.main_plot_name, hide_x_axis=False)  # 主图
-            self.add_item(CandleItem, "candle", self.main_plot_name)  # 往主图区域，加入
-        self.add_cursor()
-        self.main_plot = self.get_plot(self.main_plot_name)
-
-    def add_indicator(self, indicator: str, is_main: bool = True):
-        """
-        新增指标信号图
-        :param indicator: 指标/信号的名称，如ma10，
-        :param is_main: 是否为主图
-        :return:
-        """
-        if is_main:
-
-            if indicator in self.main_indicator_plots:
-                self.main_plot.removeItem(self.main_indicator_plots[indicator])  # 存在该指标/信号，先移除原有画布
-
-            self.main_indicator_plots[indicator] = self.main_plot.plot()  # 为该指标/信号，创建新的主图画布，登记字典
-            self.main_indicator_colors[indicator] = self.main_color_pool[0]  # 登记该指标/信号使用的颜色
-            self.main_color_pool.append(self.main_color_pool.popleft())  # 调整剩余颜色
-            if indicator not in self.main_indicator_data:
-                self.main_indicator_data[indicator] = []
-        else:
-            if indicator in self.sub_indicator_plots:
-                self.sub_plot.removeItem(self.sub_indicator_plots[indicator])  # 若存在该指标/信号，先移除原有的附图画布
-            self.sub_indicator_plots[indicator] = self.sub_plot.plot()  # 为该指标/信号，创建新的主图画布，登记字典
-            self.sub_indicator_colors[indicator] = self.sub_color_pool[0]  # 登记该指标/信号使用的颜色
-            self.sub_color_pool.append(self.sub_color_pool.popleft())  # 调整剩余颜色
-            if indicator not in self.sub_indicator_data:
-                self.sub_indicator_data[indicator] = []
-
-    def clear_indicator(self, main=True):
-        """清空指标图形"""
-        # 清空信号图
-        if main:
-            for indicator in self.main_indicator_plots:
-                self.main_plot.removeItem(self.main_indicator_plots[indicator])
-            self.main_indicator_data = {}
-            self.main_indicator_plots = {}
-        else:
-            for indicator in self.sub_indicator_plots:
-                self.sub_plot.removeItem(self.sub_indicator_plots[indicator])
-            self.sub_indicator_data = {}
-            self.sub_indicator_plots = {}
-
-    def plot_indicator(self, datas: dict, is_main=True, clear=False):
-        """
-        刷新指标/信号图( 新数据）
-        :param datas: 所有数据
-        :param is_main: 是否为主图
-        :param clear: 是否要清除旧数据
-        :return:
-        """
-        if clear:
-            self.clear_indicator(is_main)  # 清除主图/副图
-
-        if is_main:
-            for indicator in datas:
-                self.add_indicator(indicator, is_main)  # 逐一添加主图信号/指标
-                self.main_indicator_data[indicator] = datas[indicator]  # 更新组件数据字典
-                # 调用该信号/指标画布(plotDataItem.setData())，更新数据，更新画笔颜色，更新名称
-                self.main_indicator_plots[indicator].setData(datas[indicator],
-                                                             pen=self.main_indicator_colors[indicator][0],
-                                                             name=indicator)
-        else:
-            for indicator in datas:
-                self.add_indicator(indicator, is_main)  # 逐一增加子图指标/信号
-                self.sub_indicator_data[indicator] = datas[indicator]  # 更新组件数据字典
-                # 调用该信号/指标画布(plotDataItem.setData())，更新数据，更新画笔颜色，更新名称
-                self.sub_indicator_plots[indicator].setData(datas[indicator],
-                                                            pen=self.sub_indicator_colors[indicator][0], name=indicator)
