@@ -1,5 +1,7 @@
 # Python
 *.pyc
+*.pyo
+*.pyd
 *.egg-info/
 
 # Jupyter
@@ -18,7 +20,7 @@ build
 dist
 *.local
 
-# vn.py
+# VeighNa
 .vntrader
 
 # Visual Studio intermediate files
@@ -31,3 +33,10 @@ dist
 _build
 _static
 _templates
+
+# Misc
+.DS_Store
+*.mo
+
+# Alpha
+lab/
