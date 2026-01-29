@@ -64,10 +64,16 @@ def run_hybrid_mode():
         "news_valid_time": 300,
         "enable_lark_push": True,
 
-        # 飞书配置
-        "lark_app_id": "your_lark_app_id",
-        "lark_app_secret": "your_lark_app_secret",
-        "lark_chat_id": "oc_xxxxxxxxxxxxxxxx",
+        # 飞书配置（两种方式二选一）
+
+        # 方式一：使用 Webhook（推荐，简单）
+        # 在飞书群聊中添加自定义机器人，获取 Webhook URL
+        "lark_webhook_url": "https://open.feishu.cn/open-apis/bot/v2/hook/xxxxxxxxx",
+        # 方式二：使用飞书应用（功能完整，支持交互式卡片和审批按钮）
+        # "lark_app_id": "cli_xxxxxxxxxxxxx",
+        # "lark_app_secret": "xxxxxxxxxxxxxx",
+        # "lark_chat_id": "oc_xxxxxxxxxxxxxxxx",
+
         "lark_approval_timeout": 300,
 
         # 混合模式配置

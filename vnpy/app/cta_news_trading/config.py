@@ -98,6 +98,7 @@ class ExecutionConfig:
     lark_app_secret: str = ""       # 飞书应用Secret
     lark_chat_id: str = ""          # 飞书群聊ID
     lark_bot_name: str = "交易机器人" # 飞书机器人名称
+    lark_webhook_url: str = "https://open.feishu.cn/open-apis/bot/v2/hook/a97ae0ac-e449-44bd-9bfb-de4b6acd31ba"      # 飞书Webhook地址（优先使用webhook，如果为空则使用app_id/app_secret）
 
     # 混合模式配置
     direct_threshold: float = 10000.0   # 直接执行的资金阈值
@@ -130,6 +131,7 @@ class ExecutionConfig:
             "lark_app_secret": self.lark_app_secret,
             "lark_chat_id": self.lark_chat_id,
             "lark_bot_name": self.lark_bot_name,
+            "lark_webhook_url": self.lark_webhook_url,
             "direct_threshold": self.direct_threshold,
             "lark_approval_timeout": self.lark_approval_timeout,
             "max_single_order": self.max_single_order,

@@ -3,12 +3,13 @@
 """
 
 import json
+import requests
 import time
 import hmac
 import hashlib
 import base64
 import threading
-from typing import Dict, List, Optional
+from typing import Dict, List
 from datetime import datetime
 
 try:
@@ -475,12 +476,217 @@ class LarkWebhookClient:
             data["content"] = content
 
         try:
+            print(f"[DEBUG] 发送飞书Webhook消息: {self.webhook_url}")
+            print(f"[DEBUG] 消息类型: {msg_type}")
+            print(f"[DEBUG] 请求数据: {data}")
+
             response = requests.post(self.webhook_url, json=data, timeout=10)
             result = response.json()
-            return result.get("StatusCode") == 0 or result.get("code") == 0
+
+            print(f"[DEBUG] 响应状态码: {response.status_code}")
+            print(f"[DEBUG] 响应内容: {result}")
+
+            # 检查不同的成功字段
+            code = result.get("code", result.get("StatusCode", -1))
+            if code == 0:
+                print(f"[DEBUG] 飞书消息发送成功")
+                return True
+            else:
+                print(f"[ERROR] 飞书消息发送失败, code={code}, msg={result.get('msg', 'unknown')}")
+                return False
         except Exception as e:
-            print(f"发送飞书消息失败: {e}")
+            print(f"[ERROR] 发送飞书消息异常: {e}")
+            import traceback
+            traceback.print_exc()
             return False
+
+    def send_text_message(self, chat_id: str, content: str) -> bool:
+        """发送文本消息（兼容LarkClient接口）
+
+        Args:
+            chat_id: 群聊ID（webhook模式下忽略此参数）
+            content: 消息内容
+
+        Returns:
+            是否发送成功
+        """
+        return self.send_message(content, msg_type="text")
+
+    def send_card_message(self, chat_id: str, card: dict) -> bool:
+        """发送卡片消息（兼容LarkClient接口）
+
+        Args:
+            chat_id: 群聊ID（webhook模式下忽略此参数）
+            card: 卡片内容
+
+        Returns:
+            是否发送成功
+        """
+        return self.send_message(card, msg_type="interactive")
+
+    def send_news_analysis(self, chat_id: str, analysis: dict) -> bool:
+        """发送新闻分析结果（兼容LarkClient接口）
+
+        Args:
+            chat_id: 群聊ID（webhook模式下忽略此参数）
+            analysis: 分析结果
+
+        Returns:
+            是否发送成功
+        """
+        # 构建卡片
+        sentiment_emoji = {
+            "正面": "📈",
+            "负面": "📉",
+            "中性": "😐"
+        }
+
+        signal_emoji = {
+            "BUY": "🟢",
+            "SELL": "🔴",
+            "HOLD": "⚪"
+        }
+
+        sentiment_label = analysis.get("sentiment_label", "中性")
+        sentiment_score = analysis.get("sentiment", 0)
+        confidence = analysis.get("confidence", 0)
+        trade_signal = analysis.get("trade_signal", "HOLD")
+        target_symbols = analysis.get("target_symbols", [])
+        keywords = analysis.get("keywords", [])
+        summary = analysis.get("summary", "")
+
+        # 构建内容元素
+        elements = [
+            {
+                "tag": "div",
+                "text": {
+                    "tag": "lark_md",
+                    "content": f"**情感倾向:** {sentiment_emoji.get(sentiment_label, '')} {sentiment_label} ({sentiment_score:.2f})"
+                }
+            },
+            {
+                "tag": "div",
+                "text": {
+                    "tag": "lark_md",
+                    "content": f"**置信度:** {confidence:.2%}"
+                }
+            },
+            {
+                "tag": "div",
+                "text": {
+                    "tag": "lark_md",
+                    "content": f"**交易信号:** {signal_emoji.get(trade_signal, '')} {trade_signal}"
+                }
+            },
+        ]
+
+        if target_symbols:
+            symbols_str = "、".join(target_symbols)
+            elements.append({
+                "tag": "div",
+                "text": {
+                    "tag": "lark_md",
+                    "content": f"**相关品种:** {symbols_str}"
+                }
+            })
+
+        if keywords:
+            keywords_str = "、".join(keywords[:5])
+            elements.append({
+                "tag": "div",
+                "text": {
+                    "tag": "lark_md",
+                    "content": f"**关键词:** {keywords_str}"
+                }
+            })
+
+        if summary:
+            elements.append({
+                "tag": "hr"
+            })
+            elements.append({
+                "tag": "div",
+                "text": {
+                    "tag": "lark_md",
+                    "content": f"**摘要:** {summary}"
+                }
+            })
+
+        card = {
+            "config": {
+                "wide_screen_mode": True
+            },
+            "header": {
+                "title": {
+                    "tag": "plain_text",
+                    "content": "📰 新闻分析结果"
+                }
+            },
+            "elements": elements
+        }
+
+        return self.send_card_message(chat_id, card)
+
+    def send_trade_request(self, chat_id: str, command: dict, timeout: int = 300) -> bool:
+        """发送交易请求（兼容LarkClient接口，webhook模式不支持按钮）
+
+        Args:
+            chat_id: 群聊ID（webhook模式下忽略此参数）
+            command: 交易指令
+            timeout: 审批超时时间（秒）
+
+        Returns:
+            是否发送成功
+        """
+        # Webhook模式不支持交互式按钮，发送文本消息
+        command_id = command.get("command_id", "")
+        symbol = command.get("symbol", "")
+        direction = command.get("direction", "")
+        price = command.get("price", 0)
+        volume = command.get("volume", 0)
+        reason = command.get("reason", "")
+
+        direction_emoji = {
+            "LONG": "📈",
+            "SHORT": "📉"
+        }
+
+        content = f"""⚠️ 交易请求（Webhook模式不支持审批）
+
+品种: {symbol}
+方向: {direction_emoji.get(direction, '')} {direction}
+价格: {price}
+数量: {volume}
+理由: {reason}
+指令ID: {command_id}
+
+注意: Webhook模式不支持交互式审批，如需执行请手动下单"""
+
+        return self.send_message(content, msg_type="text")
+
+    def send_trade_result(self, chat_id: str, command_id: str,
+                         success: bool, message: str = "") -> bool:
+        """发送交易执行结果（兼容LarkClient接口）
+
+        Args:
+            chat_id: 群聊ID（webhook模式下忽略此参数）
+            command_id: 指令ID
+            success: 是否成功
+            message: 结果消息
+
+        Returns:
+            是否发送成功
+        """
+        status_emoji = "✅" if success else "❌"
+        status_text = "执行成功" if success else "执行失败"
+
+        content = f"""{status_emoji} 交易结果
+
+指令ID: {command_id}
+状态: {status_text}
+详情: {message}"""
+
+        return self.send_message(content, msg_type="text")
 
 
 def verify_webhook_signature(timestamp: str, sign: str, encrypt_key: str) -> bool:

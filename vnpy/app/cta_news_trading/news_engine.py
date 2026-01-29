@@ -10,7 +10,7 @@ from typing import Dict, Callable, Optional, List
 from datetime import datetime, timedelta
 
 from .config import ExecutionConfig, ExecutionMode
-from .lark_client import LarkClient
+from .lark_client import LarkClient, LarkWebhookClient
 
 
 class TradeCommand:
@@ -59,7 +59,7 @@ class News_Engine:
     def __init__(self, main_engine, config: ExecutionConfig):
         """
         Args:
-            main_engine: vn.py主引擎
+            main_engine: vn.py主引擎（可以为None，用于manual模式）
             config: 执行配置
         """
         self.main_engine = main_engine
@@ -72,14 +72,31 @@ class News_Engine:
         self.daily_order_count = 0
         self.last_reset_date = datetime.now().date()
 
-        # 初始化飞书客户端
-        if config.enable_lark_push and config.lark_app_id and config.lark_app_secret:
-            self.lark_client = LarkClient(
-                app_id=config.lark_app_id,
-                app_secret=config.lark_app_secret,
-                bot_name=config.lark_bot_name
-            )
-            print("飞书客户端已初始化")
+        print(f"[DEBUG] News_Engine.__init__ - main_engine: {main_engine}")
+        print(f"[DEBUG] News_Engine.__init__ - enable_lark_push: {config.enable_lark_push}")
+        print(f"[DEBUG] News_Engine.__init__ - lark_webhook_url: {config.lark_webhook_url}")
+        print(f"[DEBUG] News_Engine.__init__ - lark_app_id: {config.lark_app_id}")
+
+        # 初始化飞书客户端（即使没有 main_engine 也要初始化）
+        if config.enable_lark_push:
+            # 优先使用 Webhook 方式（更简单）
+            if config.lark_webhook_url:
+                self.lark_client = LarkWebhookClient(
+                    webhook_url=config.lark_webhook_url
+                )
+                print(f"[OK] 飞书Webhook客户端已初始化: {config.lark_webhook_url}")
+            # 使用飞书应用方式
+            elif config.lark_app_id and config.lark_app_secret:
+                self.lark_client = LarkClient(
+                    app_id=config.lark_app_id,
+                    app_secret=config.lark_app_secret,
+                    bot_name=config.lark_bot_name
+                )
+                print("[OK] 飞书应用客户端已初始化")
+            else:
+                print("[WARNING] enable_lark_push=True 但未配置 webhook 或 app_id/app_secret")
+        else:
+            print("[INFO] 飞书推送未启用")
 
     def _reset_daily_count(self):
         """重置每日计数"""
@@ -113,10 +130,17 @@ class News_Engine:
 
             # 推送分析结果到飞书
             if self.lark_client and self.config.enable_lark_push:
-                self.lark_client.send_news_analysis(
+                print(f"[DEBUG] 正在发送飞书消息...")
+                success = self.lark_client.send_news_analysis(
                     self.config.lark_chat_id,
                     analysis
                 )
+                if success:
+                    print(f"[DEBUG] 飞书消息发送成功")
+                else:
+                    print(f"[ERROR] 飞书消息发送失败")
+            else:
+                print(f"[DEBUG] 未发送飞书消息: lark_client={self.lark_client}, enable_lark_push={self.config.enable_lark_push}")
 
             # 生成交易信号
             trade_signal = analysis.get("trade_signal", "HOLD")

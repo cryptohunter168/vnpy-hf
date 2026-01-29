@@ -72,6 +72,7 @@ class NewsTradingStrategy(CtaTemplate):
     lark_app_id: str = ""                  # 飞书应用ID
     lark_app_secret: str = ""              # 飞书应用Secret
     lark_chat_id: str = ""                 # 飞书群聊ID
+    lark_webhook_url: str = ""             # 飞书Webhook地址（优先使用webhook）
     lark_approval_timeout: int = 300         # 审批超时时间（秒）
 
     # 分析器配置
@@ -95,6 +96,7 @@ class NewsTradingStrategy(CtaTemplate):
         "lark_app_id",
         "lark_app_secret",
         "lark_chat_id",
+        "lark_webhook_url",
         "lark_approval_timeout",
         "analyzer_type",
         "incremental_keywords",
@@ -118,6 +120,10 @@ class NewsTradingStrategy(CtaTemplate):
     def __init__(self, cta_engine, strategy_name, vt_symbol, setting):
         """构造函数"""
         super().__init__(cta_engine, strategy_name, vt_symbol, setting)
+
+        # 调试：打印参数
+        print(f"[DEBUG] Strategy __init__ - lark_webhook_url: {self.lark_webhook_url}")
+        print(f"[DEBUG] Strategy __init__ - setting: {setting}")
 
         # 1. 创建执行配置
         self.config = self._create_config()
@@ -217,11 +223,13 @@ class NewsTradingStrategy(CtaTemplate):
 
     def _create_config(self) -> ExecutionConfig:
         """创建执行配置"""
-        return ExecutionConfig(
+        print(f"[DEBUG] _create_config - self.lark_webhook_url: {self.lark_webhook_url}")
+        config = ExecutionConfig(
             mode=ExecutionMode(self.execution_mode),
             lark_app_id=self.lark_app_id,
             lark_app_secret=self.lark_app_secret,
             lark_chat_id=self.lark_chat_id,
+            lark_webhook_url=self.lark_webhook_url,
             lark_approval_timeout=self.lark_approval_timeout,
             max_single_order=self.max_single_order,
             max_daily_orders=self.max_daily_orders,
@@ -230,9 +238,17 @@ class NewsTradingStrategy(CtaTemplate):
             enable_lark_push=self.enable_lark_push,
             news_valid_time=self.news_valid_time,
         )
+        print(f"[DEBUG] _create_config - config.lark_webhook_url: {config.lark_webhook_url}")
+        return config
 
     def on_init(self):
         """策略初始化"""
+        print("=" * 80)
+        print(f"[DEBUG] ========== on_init 方法开始 ==========")
+        print(f"[DEBUG] execution_mode: {self.execution_mode}")
+        print(f"[DEBUG] news_processing_mode: {self.news_processing_mode}")
+        print("=" * 80)
+
         self.write_log(f"新闻驱动交易策略初始化 (模式: {self.news_processing_mode})")
 
         # 订阅新闻事件
@@ -241,17 +257,50 @@ class NewsTradingStrategy(CtaTemplate):
         self.event_engine.register(EVENT_TRADE_COMMAND, self.on_trade_command_event)
 
         # 初始化执行引擎
-        if self.cta_engine.main_engine:
-            self.execution_engine = News_Engine(
-                main_engine=self.cta_engine.main_engine,
-                config=self.config
-            )
-            self.write_log("执行引擎初始化成功")
+        print(f"[DEBUG] self.cta_engine: {self.cta_engine}")
+        print(f"[DEBUG] self.cta_engine.main_engine: {self.cta_engine.main_engine}")
+        print(f"[DEBUG] self.execution_mode: {self.execution_mode}")
+        print(f"[DEBUG] type(self.cta_engine): {type(self.cta_engine)}")
+
+        # 检查是否是 CTA 引擎
+        has_main_engine = hasattr(self.cta_engine, 'main_engine')
+        main_engine_value = self.cta_engine.main_engine if has_main_engine else "NO_ATTR"
+        print(f"[DEBUG] cta_engine has main_engine attribute: {has_main_engine}")
+        print(f"[DEBUG] cta_engine.main_engine value: {main_engine_value}")
+
+        # 在 manual 模式下，即使没有 main_engine 也要创建 execution_engine（用于发送飞书消息）
+        condition1 = self.cta_engine.main_engine is not None
+        condition2 = self.execution_mode == "manual"
+        print(f"[DEBUG] 条件判断 - main_engine存在: {condition1}")
+        print(f"[DEBUG] 条件判断 - execution_mode=='manual': {condition2}")
+        print(f"[DEBUG] 条件判断 - OR结果: {condition1 or condition2}")
+
+        if condition1 or condition2:
+            print(f"[DEBUG] =====> 即将创建 execution_engine ======>")
+            try:
+                print(f"[DEBUG] 调用 News_Engine()...")
+                self.execution_engine = News_Engine(
+                    main_engine=self.cta_engine.main_engine,  # manual 模式下可以是 None
+                    config=self.config
+                )
+                print(f"[DEBUG] execution_engine 创建成功: {self.execution_engine}")
+                print(f"[DEBUG] execution_engine 类型: {type(self.execution_engine)}")
+                self.write_log("执行引擎初始化成功")
+            except Exception as e:
+                print(f"[ERROR] 创建 execution_engine 异常: {e}")
+                import traceback
+                traceback.print_exc()
+        else:
+            print(f"[DEBUG] =====> 跳过创建 execution_engine ======>")
+            self.write_log("警告: 未找到 main_engine，执行引擎未初始化")
 
         # 启动调度器（如果需要）
         if self.scheduler:
             self.scheduler.start()
             self.write_log("定时调度器已启动")
+
+        print(f"[DEBUG] ========== on_init 方法结束 ==========")
+        print("=" * 80)
 
     def on_start(self):
         """策略启动"""
