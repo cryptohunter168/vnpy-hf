@@ -204,8 +204,8 @@ class NewsStorage:
                     news_data.get("source", ""),
                     news_data.get("url", ""),
                     news_data.get("news_time"),
-                    json.dumps(news_data.get("rank_info", {}), ensure_ascii=False),
-                    json.dumps(news_data, ensure_ascii=False)
+                    json.dumps(news_data.get("rank_info", {}), ensure_ascii=False, default=_json_serializer),
+                    json.dumps(news_data, ensure_ascii=False, default=_json_serializer)
                 ))
                 return True
         except sqlite3.IntegrityError:

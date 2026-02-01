@@ -42,7 +42,7 @@ def run_manual_mode():
             {
                 "type": "mock",
                 "name": "新浪财经",
-                "url": "http://finance.sina.com.cn/roll/finance.d.html"
+                "url": "https://finance.sina.com.cn/"
             }
         ]
     }
