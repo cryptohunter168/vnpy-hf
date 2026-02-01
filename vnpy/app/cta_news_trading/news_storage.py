@@ -12,6 +12,13 @@ from contextlib import contextmanager
 from .config import NewsProcessingMode
 
 
+def _json_serializer(obj):
+    """JSON 序列化器，处理 datetime 等特殊类型"""
+    if isinstance(obj, datetime):
+        return obj.isoformat()
+    raise TypeError(f"Object of type {type(obj).__name__} is not JSON serializable")
+
+
 class NewsDatabase:
     """新闻数据库管理器"""
 
@@ -328,7 +335,7 @@ class AnalysisStorage:
                     json.dumps(analysis_result.get("keywords", []), ensure_ascii=False),
                     analysis_result.get("trade_signal"),
                     json.dumps(analysis_result.get("target_symbols", []), ensure_ascii=False),
-                    json.dumps(analysis_result, ensure_ascii=False)
+                    json.dumps(analysis_result, ensure_ascii=False, default=_json_serializer)
                 ))
                 return True
         except Exception as e:

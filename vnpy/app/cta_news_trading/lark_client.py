@@ -12,6 +12,20 @@ import threading
 from typing import Dict, List
 from datetime import datetime
 
+
+import sys
+
+
+def _safe_print(msg: str):
+    """安全打印，处理 Windows GBK 控制台无法编码 emoji 等字符的问题"""
+    try:
+        print(msg)
+    except UnicodeEncodeError:
+        # 获取控制台编码，将无法编码的字符替换为 ?
+        encoding = sys.stdout.encoding or 'utf-8'
+        safe_msg = msg.encode(encoding, errors='replace').decode(encoding)
+        print(safe_msg)
+
 try:
     import requests
     REQUESTS_AVAILABLE = True
@@ -47,7 +61,7 @@ class LarkClient:
                 return self.access_token
 
             if not REQUESTS_AVAILABLE:
-                print("缺少requests库，无法获取飞书access_token")
+                _safe_print("缺少requests库，无法获取飞书access_token")
                 return ""
 
             url = "https://open.feishu.cn/open-apis/auth/v3/app_access_token/internal"
@@ -65,10 +79,10 @@ class LarkClient:
                     self.token_expire_time = time.time() + result.get("expire", 3600) - 60
                     return self.access_token
                 else:
-                    print(f"获取access_token失败: {result}")
+                    _safe_print(f"获取access_token失败: {result}")
                     return ""
             except Exception as e:
-                print(f"获取access_token异常: {e}")
+                _safe_print(f"获取access_token异常: {e}")
                 return ""
 
     def _request(self, method: str, path: str, data: dict = None,
@@ -86,7 +100,7 @@ class LarkClient:
             响应数据字典
         """
         if not REQUESTS_AVAILABLE:
-            print("缺少requests库")
+            _safe_print("缺少requests库")
             return {}
 
         token = self._get_access_token()
@@ -113,10 +127,10 @@ class LarkClient:
             if result.get("code") == 0:
                 return result.get("data", {})
             else:
-                print(f"请求失败: {result}")
+                _safe_print(f"请求失败: {result}")
                 return {}
         except Exception as e:
-            print(f"请求异常: {e}")
+            _safe_print(f"请求异常: {e}")
             return {}
 
     def send_text_message(self, chat_id: str, content: str) -> bool:
@@ -454,7 +468,7 @@ class LarkWebhookClient:
             是否发送成功
         """
         if not REQUESTS_AVAILABLE:
-            print("缺少requests库")
+            _safe_print("缺少requests库")
             return False
 
         data = {
@@ -473,29 +487,30 @@ class LarkWebhookClient:
                 }
             }
         elif msg_type == "interactive":
-            data["content"] = content
+            # 飞书 Webhook 卡片消息使用 card 字段，而不是 content
+            data["card"] = content
 
         try:
-            print(f"[DEBUG] 发送飞书Webhook消息: {self.webhook_url}")
-            print(f"[DEBUG] 消息类型: {msg_type}")
-            print(f"[DEBUG] 请求数据: {data}")
+            _safe_print(f"[DEBUG] 发送飞书Webhook消息: {self.webhook_url}")
+            _safe_print(f"[DEBUG] 消息类型: {msg_type}")
+            _safe_print(f"[DEBUG] 请求数据: {data}")
 
             response = requests.post(self.webhook_url, json=data, timeout=10)
             result = response.json()
 
-            print(f"[DEBUG] 响应状态码: {response.status_code}")
-            print(f"[DEBUG] 响应内容: {result}")
+            _safe_print(f"[DEBUG] 响应状态码: {response.status_code}")
+            _safe_print(f"[DEBUG] 响应内容: {result}")
 
             # 检查不同的成功字段
             code = result.get("code", result.get("StatusCode", -1))
             if code == 0:
-                print(f"[DEBUG] 飞书消息发送成功")
+                _safe_print(f"[DEBUG] 飞书消息发送成功")
                 return True
             else:
-                print(f"[ERROR] 飞书消息发送失败, code={code}, msg={result.get('msg', 'unknown')}")
+                _safe_print(f"[ERROR] 飞书消息发送失败, code={code}, msg={result.get('msg', 'unknown')}")
                 return False
         except Exception as e:
-            print(f"[ERROR] 发送飞书消息异常: {e}")
+            _safe_print(f"[ERROR] 发送飞书消息异常: {e}")
             import traceback
             traceback.print_exc()
             return False

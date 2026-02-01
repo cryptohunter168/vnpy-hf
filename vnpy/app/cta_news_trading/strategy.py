@@ -79,7 +79,7 @@ class NewsTradingStrategy(CtaTemplate):
     analyzer_type: str = "snownlp"          # 分析器类型 (keyword/snownlp/bert)
 
     # 策略变量
-    last_news_time: Optional[datetime] = None   # 最后新闻时间
+    last_news_time: Optional[float] = None   # 最后新闻时间（时间戳）
     last_sentiment: float = 0.0                # 最后情感分数
     today_order_count: int = 0                  # 今日交易次数
 
@@ -211,13 +211,13 @@ class NewsTradingStrategy(CtaTemplate):
         if summary_config.schedule_type == ScheduleType.FIXED_TIME:
             return FixedTimeScheduler(
                 callback=self._on_summary_scheduled,
-                event_engine=self.event_engine,
+                event_engine=self.cta_engine.event_engine,
                 schedule_times=summary_config.schedule_times
             )
         else:
             return IntervalScheduler(
                 callback=self._on_summary_scheduled,
-                event_engine=self.event_engine,
+                event_engine=self.cta_engine.event_engine,
                 interval_seconds=summary_config.schedule_interval
             )
 
@@ -252,9 +252,9 @@ class NewsTradingStrategy(CtaTemplate):
         self.write_log(f"新闻驱动交易策略初始化 (模式: {self.news_processing_mode})")
 
         # 订阅新闻事件
-        self.event_engine.register(EVENT_NEWS, self.on_news_event)
-        self.event_engine.register(EVENT_NEWS_ANALYSIS, self.on_analysis_event)
-        self.event_engine.register(EVENT_TRADE_COMMAND, self.on_trade_command_event)
+        self.cta_engine.event_engine.register(EVENT_NEWS, self.on_news_event)
+        self.cta_engine.event_engine.register(EVENT_NEWS_ANALYSIS, self.on_analysis_event)
+        self.cta_engine.event_engine.register(EVENT_TRADE_COMMAND, self.on_trade_command_event)
 
         # 初始化执行引擎
         print(f"[DEBUG] self.cta_engine: {self.cta_engine}")
@@ -324,9 +324,9 @@ class NewsTradingStrategy(CtaTemplate):
             self.write_log("数据库连接已关闭")
 
         # 取消事件订阅
-        self.event_engine.unregister(EVENT_NEWS, self.on_news_event)
-        self.event_engine.unregister(EVENT_NEWS_ANALYSIS, self.on_analysis_event)
-        self.event_engine.unregister(EVENT_TRADE_COMMAND, self.on_trade_command_event)
+        self.cta_engine.event_engine.unregister(EVENT_NEWS, self.on_news_event)
+        self.cta_engine.event_engine.unregister(EVENT_NEWS_ANALYSIS, self.on_analysis_event)
+        self.cta_engine.event_engine.unregister(EVENT_TRADE_COMMAND, self.on_trade_command_event)
 
     def on_news_event(self, event):
         """处理新闻事件（重构后的路由函数）"""
@@ -463,7 +463,8 @@ class NewsTradingStrategy(CtaTemplate):
             analysis = self.analyzer.analyze_news(news_data)
 
             # 更新策略变量
-            self.last_news_time = analysis["analysis_time"]
+            analysis_time = analysis["analysis_time"]
+            self.last_news_time = analysis_time.timestamp() if isinstance(analysis_time, datetime) else analysis_time
             self.last_sentiment = analysis["sentiment"]
 
             self.write_log(f"分析结果: 情感={analysis['sentiment']:.2f}, "
@@ -476,7 +477,7 @@ class NewsTradingStrategy(CtaTemplate):
             # 发送分析事件
             from vnpy.event import Event
             event = Event(EVENT_NEWS_ANALYSIS, analysis)
-            self.event_engine.put(event)
+            self.cta_engine.event_engine.put(event)
 
             # 执行分析结果
             if self.execution_engine:
@@ -505,7 +506,7 @@ class NewsTradingStrategy(CtaTemplate):
         """Tick数据回调"""
         # 检查新闻是否过期
         if self.last_news_time:
-            time_diff = (datetime.now() - self.last_news_time).total_seconds()
+            time_diff = datetime.now().timestamp() - self.last_news_time
             if time_diff > self.news_valid_time:
                 self.write_log("新闻信号已过期")
                 self.last_news_time = None
@@ -604,7 +605,8 @@ class MultiSymbolNewsStrategy(NewsTradingStrategy):
             analysis = self.analyzer.analyze_news(news_data)
 
             # 更新策略变量
-            self.last_news_time = analysis["analysis_time"]
+            analysis_time = analysis["analysis_time"]
+            self.last_news_time = analysis_time.timestamp() if isinstance(analysis_time, datetime) else analysis_time
             self.last_sentiment = analysis["sentiment"]
 
             target_symbols = analysis.get("target_symbols", [])
@@ -617,7 +619,7 @@ class MultiSymbolNewsStrategy(NewsTradingStrategy):
             # 发送分析事件
             from vnpy.event import Event
             event = Event(EVENT_NEWS_ANALYSIS, analysis)
-            self.event_engine.put(event)
+            self.cta_engine.event_engine.put(event)
 
             # 只处理目标品种中的信号
             if analysis["trade_signal"] == "HOLD":

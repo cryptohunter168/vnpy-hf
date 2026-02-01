@@ -1,0 +1,21 @@
+{
+    "news_strategy_manual": {
+        "class_name": "NewsTradingStrategy",
+        "vt_symbol": "BTCUSDT.BINANCE",
+        "setting": {
+            "execution_mode": "manual",
+            "sentiment_threshold": 0.6,
+            "confidence_threshold": 0.7,
+            "trade_volume": 0.01,
+            "max_single_order": 50000.0,
+            "max_daily_orders": 10,
+            "news_valid_time": 300,
+            "enable_lark_push": true,
+            "lark_app_id": "your_lark_app_id",
+            "lark_app_secret": "your_lark_app_secret",
+            "lark_chat_id": "oc_xxxxxxxxxxxxxxxx",
+            "lark_approval_timeout": 300,
+            "analyzer_type": "snownlp"
+        }
+    }
+}
