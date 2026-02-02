@@ -116,6 +116,8 @@ class News_Engine:
             是否成功处理
         """
         try:
+            print(f"[DEBUG] execute_analysis called - lark_client type: {type(self.lark_client).__name__ if self.lark_client else 'None'}")
+            print(f"[DEBUG] sentiment_threshold: {self.config.sentiment_threshold}, confidence_threshold: {self.config.confidence_threshold}")
             # 检查阈值
             sentiment = analysis.get("sentiment", 0)
             confidence = analysis.get("confidence", 0)

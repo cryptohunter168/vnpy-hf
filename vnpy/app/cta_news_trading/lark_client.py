@@ -549,6 +549,8 @@ class LarkWebhookClient:
         Returns:
             是否发送成功
         """
+        _safe_print(f"[DEBUG] LarkWebhookClient.send_news_analysis called")
+        _safe_print(f"[DEBUG] analysis: {analysis}")
         # 构建卡片
         sentiment_emoji = {
             "正面": "📈",

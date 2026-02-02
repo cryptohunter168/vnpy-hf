@@ -10,6 +10,7 @@ from vnpy.trader.constant import Direction, Offset, OrderType
 from vnpy.trader.object import OrderData, TradeData, TickData, BarData
 from vnpy.app.cta_strategy.template import CtaTemplate
 from vnpy.trader.event import EVENT_NEWS, EVENT_NEWS_ANALYSIS, EVENT_TRADE_COMMAND
+from vnpy.trader.utility import get_file_path
 
 from .config import (
     ExecutionConfig, ExecutionMode,
@@ -66,7 +67,7 @@ class NewsTradingStrategy(CtaTemplate):
     summary_schedule_interval: int = 3600             # 汇总模式推送间隔（秒）
 
     # SQLite 配置
-    db_path: str = "vnpy_news_trading.db"   # SQLite 数据库文件路径
+    db_path: str = ""                        # SQLite 数据库文件路径（空字符串表示使用默认路径）
 
     # 飞书配置
     lark_app_id: str = ""                  # 飞书应用ID
@@ -132,7 +133,9 @@ class NewsTradingStrategy(CtaTemplate):
         self.news_config = self._create_news_config()
 
         # 3. 初始化 SQLite 存储管理器
-        self.storage_manager = StorageManager(self.db_path)
+        # 如果 db_path 为空，使用默认路径（.vntrader 目录）
+        db_path = self.db_path if self.db_path else str(get_file_path("vnpy_news_trading.db"))
+        self.storage_manager = StorageManager(db_path)
 
         # 4. 初始化匹配器
         self.matcher = self._create_matcher()
@@ -333,11 +336,14 @@ class NewsTradingStrategy(CtaTemplate):
         news_data = event.data
         news_id = news_data.get("news_id", "")
 
+        print(f"[DEBUG] {self.strategy_name}.on_news_event called - news_id={news_id}")
+
         if not news_id:
             return
 
         # 根据模式分发处理
         mode = self.news_config.mode
+        print(f"[DEBUG] {self.strategy_name} - mode={mode}")
 
         if mode == NewsProcessingMode.INCREMENTAL:
             self._process_incremental_news(news_data)
@@ -348,9 +354,14 @@ class NewsTradingStrategy(CtaTemplate):
 
     def _process_incremental_news(self, news_data: dict):
         """处理增量模式新闻"""
+        print(f"[DEBUG] {self.strategy_name}._process_incremental_news called")
+
         # 1. 匹配
         if not self.matcher.match(news_data):
+            print(f"[DEBUG] {self.strategy_name} - news did not match")
             return
+
+        print(f"[DEBUG] {self.strategy_name} - news matched")
 
         # 2. 存储到数据库（自动去重）
         is_new = self.storage_manager.news_storage.add_news(
@@ -359,11 +370,13 @@ class NewsTradingStrategy(CtaTemplate):
         )
 
         if not is_new:
+            print(f"[DEBUG] {self.strategy_name} - news already processed (duplicate)")
             return  # 已处理过
 
         self.write_log(f"[增量模式] 收到新闻: {news_data.get('title', '')}")
 
         # 3. 立即分析
+        print(f"[DEBUG] {self.strategy_name} - calling _analyze_news")
         self._analyze_news(news_data)
 
     def _process_current_rank_news(self, news_data: dict):
