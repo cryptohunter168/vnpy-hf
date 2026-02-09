@@ -36,11 +36,12 @@
     "sources": [
       {
         "type": "api",
-        "name": "全部热点新闻",
-        "site_id": "newsnow",
-        "url": "https://newsnow.busiyi.world"
+        "name": "财联社热点",
+        "site_id": "cls-hot",
+        "url": "https://newsnow.busiyi.world/api/s?id=cls-hot&latest"
       }
-    ]
+    ],
+    "platform": ["toutiao","baidu","wallstreetcn-hot","thepaper","cls-hot"]
   },
   "gateway": {
     "gateway_name": "BINANCE",

@@ -62,7 +62,6 @@ class RSSNewsSource(NewsSource):
     def __init__(self, name: str, rss_url: str, config: dict = None):
         super().__init__(name, config)
         self.rss_url = rss_url
-
     def fetch_news(self) -> List[dict]:
         """从RSS获取新闻"""
         if not FEEDPARSER_AVAILABLE:
@@ -117,33 +116,44 @@ class APINewsSource(NewsSource):
             return []
 
         try:
-            params = {
-                "apikey": self.api_key,
-                "language": "zh"
+            headers = {
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
+                "Accept": "application/json, text/plain, */*",
+                "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
+                "Connection": "keep-alive",
+                "Cache-Control": "no-cache",
             }
-            # 添加自定义参数
-            params.update(self.config.get("params", {}))
 
-            response = requests.get(self.api_url, params=params, timeout=10)
+            response = requests.get(self.api_url, headers=headers, timeout=10)
             response.raise_for_status()
 
-            data = response.json()
+            data_json = response.json()
+            status = data_json.get("status", "error")
+            if status not in ["success", "cache"]:
+                print(f"API返回状态: {status}")
+
             news_list = []
 
             # 根据不同API格式解析
-            articles = data.get("articles", data.get("data", []))
+            articles = data_json.get("articles", data_json.get("items", data_json.get("data", [])))
+
+            # 获取根级别的时间戳（毫秒）
+            updated_time_ms = data_json.get("updatedTime", 0)
+            if updated_time_ms:
+                # 毫秒时间戳转换为 datetime
+                from datetime import datetime
+                news_time = datetime.fromtimestamp(updated_time_ms / 1000)
+            else:
+                news_time = datetime.now()
 
             for article in articles:
-                published_str = article.get("publishedAt", article.get("published_time", ""))
-                news_time = self._parse_datetime(published_str)
-
                 news = {
-                    "news_id": f"{self.name}_{int(time.time())}_{article.get('title', '')}",
+                    "news_id": f"{self.name}_{int(time.time())}_{article.get('id', '')}",
                     "title": article.get("title", ""),
                     "content": article.get("description", article.get("content", "")),
                     "source": self.name,
                     "url": article.get("url", article.get("link", "")),
-                    "news_time": news_time or datetime.now()
+                    "news_time": news_time
                 }
                 news_list.append(news)
 
@@ -152,6 +162,8 @@ class APINewsSource(NewsSource):
 
         except Exception as e:
             print(f"获取API新闻失败: {e}")
+            import traceback
+            traceback.print_exc()
             return []
 
     def _parse_datetime(self, dt_str: str) -> Optional[datetime]:

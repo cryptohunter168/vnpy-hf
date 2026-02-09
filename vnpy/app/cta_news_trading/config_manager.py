@@ -131,7 +131,8 @@ class NewsTradingConfig:
         """获取新闻源配置"""
         return {
             "fetch_interval": self.config["news_sources"]["fetch_interval"],
-            "news_sources": self.config["news_sources"]["sources"]
+            "news_sources": self.config["news_sources"]["sources"],
+            "platforms": self.config["news_sources"].get("platform", [])
         }
 
     def get_gateway_config(self) -> Dict[str, Any]:
