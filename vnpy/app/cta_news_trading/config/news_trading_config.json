@@ -1,0 +1,52 @@
+{
+  "strategy": {
+    "class_name": "NewsTradingStrategy",
+    "strategy_name": "news_strategy_manual",
+    "vt_symbol": "BTCUSDT.BINANCE",
+    "setting": {
+      "execution_mode": "manual",
+      "sentiment_threshold": 0.6,
+      "confidence_threshold": 0.7,
+      "trade_volume": 0.01,
+      "max_single_order": 50000.0,
+      "max_daily_orders": 10,
+      "news_valid_time": 300,
+      "enable_lark_push": true,
+      "lark_webhook_url": "https://open.feishu.cn/open-apis/bot/v2/hook/a97ae0ac-e449-44bd-9bfb-de4b6acd31ba",
+      "lark_app_id": "",
+      "lark_app_secret": "",
+      "lark_chat_id": "",
+      "lark_approval_timeout": 300,
+      "analyzer_type": "keyword",
+      "news_processing_mode": "incremental",
+      "incremental_keywords": "比特币,以太坊,BTC,ETH,加密货币,数字货币,区块链",
+      "incremental_max_cache": 100,
+      "rank_threshold": 5,
+      "rank_min_sources": 2,
+      "rank_platforms": "sina,163,eastmoney",
+      "summary_keywords": "",
+      "summary_schedule_type": "interval",
+      "summary_schedule_times": "09:00,18:00",
+      "summary_schedule_interval": 3600,
+      "db_path": "vntrade/vnp_news_trading.db"
+    }
+  },
+  "news_sources": {
+    "fetch_interval": 60,
+    "sources": [
+      {
+        "type": "api",
+        "name": "全部热点新闻",
+        "site_id": "newsnow",
+        "url": "https://newsnow.busiyi.world"
+      }
+    ]
+  },
+  "gateway": {
+    "gateway_name": "BINANCE",
+    "api_key": "",
+    "api_secret": "",
+    "proxy_host": "",
+    "proxy_port": 0
+  }
+}

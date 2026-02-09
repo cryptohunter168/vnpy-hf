@@ -298,8 +298,10 @@ class NewsGateway:
     def close(self):
         """关闭新闻采集"""
         self.active = False
-        if self.thread:
-            self.thread.join(timeout=5)
+        # 不阻塞等待线程结束（daemon 线程会随主程序自动退出）
+        # 如果需要等待，可以使用更短的超时时间
+        # if self.thread and self.thread.is_alive():
+        #     self.thread.join(timeout=0.5)
         print("新闻采集网关已关闭")
 
     def _fetch_loop(self):

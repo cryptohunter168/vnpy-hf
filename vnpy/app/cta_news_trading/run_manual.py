@@ -13,6 +13,7 @@ from vnpy.trader.engine import MainEngine
 from vnpy.app.cta_strategy import CtaStrategyApp
 
 from .strategy import NewsTradingStrategy
+from .config_manager import get_config
 from vnpy.gateway.news.news_gateway import get_news_gateway
 
 
@@ -22,9 +23,13 @@ def run_manual_mode():
     print("=" * 60, flush=True)
     print("新闻驱动交易策略 - 仅通知模式", flush=True)
     print("=" * 60, flush=True)
-    print("[DEBUG] 开始创建事件引擎...", flush=True)
+
+    # 加载统一配置
+    print("[INFO] 加载配置文件...", flush=True)
+    config = get_config()
 
     # 1. 创建事件引擎
+    print("[DEBUG] 开始创建事件引擎...", flush=True)
     event_engine = EventEngine()
     print("[DEBUG] 事件引擎创建完成", flush=True)
 
@@ -33,19 +38,10 @@ def run_manual_mode():
     main_engine = MainEngine(event_engine)
     print("[DEBUG] 主引擎创建完成", flush=True)
 
-    # 3. 配置新闻网关
+    # 3. 配置新闻网关（从配置文件读取）
     print("\n1. 配置新闻网关", flush=True)
     print("[DEBUG] 开始配置新闻网关...", flush=True)
-    news_config = {
-        "fetch_interval": 60,
-        "news_sources": [
-            {
-                "type": "mock",
-                "name": "新浪财经",
-                "url": "https://finance.sina.com.cn/"
-            }
-        ]
-    }
+    news_config = config.get_news_config()
 
     # 创建新闻网关实例
     news_gateway = get_news_gateway(event_engine, news_config)
@@ -69,34 +65,25 @@ def run_manual_mode():
     cta_engine.init_engine()
     print("[DEBUG] CTA引擎初始化完成", flush=True)
 
-    # 7. 添加策略
+    # 7. 添加策略（从配置文件读取）
     print("4. 添加新闻驱动交易策略", flush=True)
-    print("[DEBUG] 准备策略配置...", flush=True)
-    setting = {
-        "execution_mode": "manual",  # 仅通知模式
-        "sentiment_threshold": 0.6,
-        "confidence_threshold": 0.7,
-        "trade_volume": 0.01,
-        "max_single_order": 50000.0,
-        "max_daily_orders": 10,
-        "news_valid_time": 300,
-        "enable_lark_push": True,
+    print("[DEBUG] 从配置文件读取策略配置...", flush=True)
 
-        # 飞书配置（使用 Webhook）
-        "lark_webhook_url": "https://open.feishu.cn/open-apis/bot/v2/hook/a97ae0ac-e449-44bd-9bfb-de4b6acd31ba",
+    strategy_config = config.get_strategy_config()
+    class_name = strategy_config["class_name"]
+    strategy_name = strategy_config["strategy_name"]
+    vt_symbol = strategy_config["vt_symbol"]
+    setting = strategy_config["setting"]
 
-        "lark_approval_timeout": 300,
+    print(f"[INFO] 策略名称: {strategy_name}", flush=True)
+    print(f"[INFO] 交易品种: {vt_symbol}", flush=True)
+    print(f"[INFO] 执行模式: {setting.get('execution_mode')}", flush=True)
+    print(f"[INFO] 飞书 Webhook: {setting.get('lark_webhook_url', '')[:50]}...", flush=True)
 
-        "analyzer_type": "snownlp",
-    }
-
-    print(f"[DEBUG] setting 配置: {setting}", flush=True)
-    print(f"[DEBUG] lark_webhook_url in setting: {'lark_webhook_url' in setting}", flush=True)
-    print(f"[DEBUG] 调用 add_strategy...", flush=True)
     cta_engine.add_strategy(
-        class_name="NewsTradingStrategy",
-        strategy_name="news_strategy_manual",
-        vt_symbol="BTCUSDT.SSE",  # 使用 SSE 交易所（vn.py 支持的交易所）
+        class_name=class_name,
+        strategy_name=strategy_name,
+        vt_symbol=vt_symbol,
         setting=setting
     )
     print(f"[DEBUG] 策略添加完成，strategies keys: {list(cta_engine.strategies.keys())}", flush=True)
